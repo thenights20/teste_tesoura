@@ -19,10 +19,10 @@ let items = [];
 let currentIndex = 0;
 
 const mediaRe = /\.(mp4|webm|mov|m4v|mkv|jpg|jpeg|png|gif|webp)(?:$|[?#])/i;
-const videoRe = /\.(mp4|webm|mov|m4v|mkv)(?:$|[?#])/i;
 const videoNameRe = /\.(mp4|webm|mov|m4v|mkv)\b/i;
 const imageRe = /\.(jpg|jpeg|png|gif|webp)(?:$|[?#])/i;
-const MAX_ITEM_PAGES = 16;
+const itemPathRe = /\/(f|i|v)\/[A-Za-z0-9]+(?:$|[/?#])/i;
+const MAX_ITEM_PAGES = 24;
 
 function setStatus(message = '', type = '') {
   statusBox.hidden = !message;
@@ -30,22 +30,8 @@ function setStatus(message = '', type = '') {
   statusBox.className = `status ${type}`.trim();
 }
 
-function humanType(item) {
-  if (item.type === 'image') return 'Imagem';
-  if (item.type === 'video') return 'Vídeo';
-  return 'Mídia';
-}
-
 function normalizeUrl(value, base) {
   try { return new URL(value, base).href; } catch { return null; }
-}
-
-function isMediaUrl(url) {
-  return mediaRe.test(url || '');
-}
-
-function mediaType(url) {
-  return imageRe.test(url || '') ? 'image' : 'video';
 }
 
 function cleanTitle(value = '') {
@@ -59,6 +45,18 @@ function titleFromUrl(url) {
   } catch {
     return 'Mídia';
   }
+}
+
+function isMediaUrl(url) {
+  return mediaRe.test(url || '');
+}
+
+function mediaType(url) {
+  return imageRe.test(url || '') ? 'image' : 'video';
+}
+
+function humanType(item) {
+  return item.type === 'image' ? 'Imagem' : 'Vídeo';
 }
 
 function addUnique(list, seen, url, title = '', forcedType = '') {
@@ -83,33 +81,52 @@ function extractFromHtml(html, pageUrl) {
   const seen = new Set();
   const doc = new DOMParser().parseFromString(html, 'text/html');
 
-  // Elementos explicitamente de vídeo: aceitamos mesmo quando a URL não termina em .mp4.
   for (const node of doc.querySelectorAll('video[src], source[src]')) {
-    const raw = node.getAttribute('src');
-    const absolute = normalizeUrl(raw, pageUrl);
-    addUnique(found, seen, absolute, node.getAttribute('title') || '', 'video');
+    addUnique(found, seen, normalizeUrl(node.getAttribute('src'), pageUrl), node.getAttribute('title') || '', 'video');
   }
 
   for (const node of doc.querySelectorAll('meta[property="og:video"], meta[property="og:video:url"], meta[property="og:video:secure_url"], meta[name="twitter:player:stream"]')) {
-    const absolute = normalizeUrl(node.getAttribute('content'), pageUrl);
-    addUnique(found, seen, absolute, pageTitle(doc), 'video');
+    addUnique(found, seen, normalizeUrl(node.getAttribute('content'), pageUrl), pageTitle(doc), 'video');
   }
 
-  // Links diretos conhecidos.
   for (const node of doc.querySelectorAll('a[href]')) {
     const absolute = normalizeUrl(node.getAttribute('href'), pageUrl);
-    if (!absolute || !isMediaUrl(absolute)) continue;
-    addUnique(found, seen, absolute, node.getAttribute('title') || node.textContent || '');
+    if (absolute && isMediaUrl(absolute)) {
+      addUnique(found, seen, absolute, node.getAttribute('title') || node.textContent || '');
+    }
   }
 
-  // URLs de mídia expostas no HTML/JSON da própria página.
   const absoluteMedia = html.match(/https?:\\?\/\\?\/[^"'<>\s]+?\.(?:mp4|webm|mov|m4v|mkv|jpg|jpeg|png|gif|webp)(?:\?[^\u0022'<>\s]*)?/gi) || [];
   for (const raw of absoluteMedia) {
-    const cleaned = raw.replace(/\\\//g, '/').replace(/&amp;/g, '&');
-    addUnique(found, seen, cleaned);
+    addUnique(found, seen, raw.replace(/\\\//g, '/').replace(/&amp;/g, '&'));
   }
 
   return { title: pageTitle(doc), items: found, doc };
+}
+
+function findNearbyAnchor(node) {
+  if (!node) return null;
+  if (node.matches?.('a[href]')) return node;
+
+  const inside = node.querySelector?.('a[href]');
+  if (inside) return inside;
+
+  const closest = node.closest?.('a[href]');
+  if (closest) return closest;
+
+  let sibling = node.previousElementSibling;
+  for (let i = 0; sibling && i < 3; i++, sibling = sibling.previousElementSibling) {
+    if (sibling.matches?.('a[href]')) return sibling;
+    const a = sibling.querySelector?.('a[href]');
+    if (a) return a;
+  }
+
+  const parent = node.parentElement;
+  if (parent) {
+    const a = parent.querySelector('a[href]');
+    if (a) return a;
+  }
+  return null;
 }
 
 function findVideoItemPages(doc, pageUrl) {
@@ -117,32 +134,60 @@ function findVideoItemPages(doc, pageUrl) {
   const found = [];
   const seen = new Set();
 
-  for (const a of doc.querySelectorAll('a[href]')) {
-    const absolute = normalizeUrl(a.getAttribute('href'), pageUrl);
-    if (!absolute || seen.has(absolute) || isMediaUrl(absolute)) continue;
+  function addPage(anchor, title = '', forceVideo = false) {
+    if (!anchor) return;
+    const absolute = normalizeUrl(anchor.getAttribute('href'), pageUrl);
+    if (!absolute || seen.has(absolute) || isMediaUrl(absolute)) return;
 
     let parsed;
-    try { parsed = new URL(absolute); } catch { continue; }
-    if (parsed.protocol !== 'https:' || parsed.hostname !== base.hostname) continue;
+    try { parsed = new URL(absolute); } catch { return; }
+    if (parsed.protocol !== 'https:' || parsed.hostname !== base.hostname) return;
+    if (!itemPathRe.test(parsed.pathname + parsed.search)) return;
 
-    const ownText = cleanTitle([
-      a.textContent || '',
-      a.getAttribute('title') || '',
-      a.getAttribute('aria-label') || '',
-      a.getAttribute('download') || ''
+    const nearby = cleanTitle([
+      title,
+      anchor.textContent || '',
+      anchor.getAttribute('title') || '',
+      anchor.getAttribute('aria-label') || '',
+      anchor.parentElement?.textContent || ''
     ].join(' '));
-    const parentText = cleanTitle(a.parentElement?.textContent || '');
-    const nearby = `${ownText} ${parentText}`;
 
-    // Prioriza cards/links que anunciam um nome de arquivo de vídeo.
-    if (!videoNameRe.test(nearby)) continue;
+    const looksVideo = forceVideo || /^\/v\//i.test(parsed.pathname) || videoNameRe.test(nearby);
+    if (!looksVideo) return;
 
     seen.add(absolute);
-    found.push({ url: absolute, title: ownText || parentText || titleFromUrl(absolute) });
+    found.push({ url: absolute, title: nearby || titleFromUrl(absolute) });
+  }
+
+  // Estrutura usada nos álbuns: caixa de texto do vídeo + link irmão anterior.
+  for (const block of doc.querySelectorAll('.grid-videos_box-txt')) {
+    const anchor = findNearbyAnchor(block);
+    addPage(anchor, block.textContent || '', true);
+    if (found.length >= MAX_ITEM_PAGES) return found;
+  }
+
+  // IDs presentes no card/HTML. Não resolvemos o ID por API; usamos apenas o link público associado ao card.
+  for (const node of doc.querySelectorAll('[data-file-id], [data-id]')) {
+    const anchor = findNearbyAnchor(node);
+    const text = cleanTitle(node.textContent || node.parentElement?.textContent || '');
+    addPage(anchor, text, videoNameRe.test(text));
+    if (found.length >= MAX_ITEM_PAGES) return found;
+  }
+
+  // Fallback: links públicos de item /f/, /i/ ou /v/ com contexto de vídeo.
+  for (const anchor of doc.querySelectorAll('a[href]')) {
+    addPage(anchor, anchor.parentElement?.textContent || anchor.textContent || '', false);
     if (found.length >= MAX_ITEM_PAGES) break;
   }
 
   return found;
+}
+
+async function fetchPublicPage(url) {
+  const response = await fetch(url, { mode: 'cors', credentials: 'omit', redirect: 'follow' });
+  if (!response.ok) throw new Error(`Falha HTTP ${response.status}`);
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  return { response, contentType };
 }
 
 async function discoverAlbumVideos(html, pageUrl) {
@@ -150,40 +195,41 @@ async function discoverAlbumVideos(html, pageUrl) {
   const directVideos = top.items.filter(item => item.type === 'video');
   const itemPages = findVideoItemPages(top.doc, pageUrl);
 
-  if (!itemPages.length) {
-    return { title: top.title, items: directVideos.length ? directVideos : top.items };
-  }
-
   const collected = [...directVideos];
   const seen = new Set(collected.map(item => item.url));
 
   for (let i = 0; i < itemPages.length; i++) {
     const entry = itemPages[i];
-    setStatus(`Procurando vídeos… ${i + 1} de ${itemPages.length}`);
+    setStatus(`Abrindo itens de vídeo… ${i + 1} de ${itemPages.length}`);
 
     try {
-      const response = await fetch(entry.url, { mode: 'cors', credentials: 'omit', redirect: 'follow' });
-      if (!response.ok) continue;
+      const { response, contentType } = await fetchPublicPage(entry.url);
+
+      if (contentType.startsWith('video/')) {
+        if (!seen.has(response.url)) {
+          seen.add(response.url);
+          collected.push({ url: response.url, title: entry.title, type: 'video' });
+        }
+        continue;
+      }
+
       const childHtml = await response.text();
       const child = extractFromHtml(childHtml, response.url || entry.url);
-      const videos = child.items.filter(item => item.type === 'video');
-
-      for (const item of videos) {
+      for (const item of child.items.filter(item => item.type === 'video')) {
         if (seen.has(item.url)) continue;
         seen.add(item.url);
-        collected.push({
-          ...item,
-          title: videoNameRe.test(entry.title) ? entry.title : (item.title || entry.title)
-        });
+        collected.push({ ...item, title: videoNameRe.test(entry.title) ? entry.title : (item.title || entry.title) });
       }
     } catch {
-      // Uma página individual pode bloquear leitura; as demais continuam sendo testadas.
+      // Mantém o restante da lista mesmo quando um item individual bloqueia leitura no navegador.
     }
   }
 
   return {
     title: top.title,
-    items: collected.length ? collected : top.items
+    items: collected,
+    detectedVideoPages: itemPages.length,
+    fallbackItems: top.items
   };
 }
 
@@ -294,22 +340,33 @@ async function loadUrl(rawUrl) {
     if (isMediaUrl(target)) {
       data = {
         title: titleFromUrl(target),
-        items: [{ url: target, title: titleFromUrl(target), type: mediaType(target) }]
+        items: [{ url: target, title: titleFromUrl(target), type: mediaType(target) }],
+        detectedVideoPages: 0,
+        fallbackItems: []
       };
     } else {
-      const response = await fetch(target, { mode: 'cors', credentials: 'omit', redirect: 'follow' });
-      if (!response.ok) throw new Error(`Falha HTTP ${response.status}`);
-      const html = await response.text();
-      data = await discoverAlbumVideos(html, response.url || target);
+      const { response, contentType } = await fetchPublicPage(target);
+      if (contentType.startsWith('video/')) {
+        data = {
+          title: titleFromUrl(response.url),
+          items: [{ url: response.url, title: titleFromUrl(response.url), type: 'video' }],
+          detectedVideoPages: 1,
+          fallbackItems: []
+        };
+      } else {
+        const html = await response.text();
+        data = await discoverAlbumVideos(html, response.url || target);
+      }
     }
 
-    if (!Array.isArray(data.items) || !data.items.length) {
-      throw new Error('Nenhuma mídia utilizável foi encontrada nesse link.');
+    if (!data.items.length) {
+      if (data.detectedVideoPages > 0) {
+        throw new Error(`Encontrei ${data.detectedVideoPages} item(ns) de vídeo no álbum, mas as páginas individuais não expuseram uma fonte pública de vídeo que o navegador pudesse reproduzir.`);
+      }
+      throw new Error('Nenhum vídeo público reproduzível foi encontrado nesse link.');
     }
 
-    // Quando houver vídeos, eles são a prioridade da lista.
-    const videos = data.items.filter(item => item.type === 'video');
-    items = videos.length ? videos : data.items;
+    items = data.items;
     currentIndex = 0;
     albumTitle.textContent = data.title || 'Conteúdo';
     count.textContent = String(items.length);
@@ -324,10 +381,10 @@ async function loadUrl(rawUrl) {
   } catch (error) {
     items = [];
     playlist.innerHTML = '';
-    const corsHint = error instanceof TypeError
-      ? 'O navegador bloqueou a leitura de uma das páginas. Tente novamente; se persistir, será necessário usar um pequeno backend para essa etapa.'
+    const message = error instanceof TypeError
+      ? 'O navegador bloqueou a leitura de uma das páginas por CORS. Para automatizar essa etapa será necessário um pequeno backend que apenas leia as páginas públicas.'
       : (error.message || 'Não foi possível abrir esse link.');
-    setStatus(corsHint, 'error');
+    setStatus(message, 'error');
   } finally {
     openButton.disabled = false;
   }
