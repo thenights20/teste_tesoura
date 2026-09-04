@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Bunkr Viewer</title>
+  <meta name="description" content="Visualizador pessoal para links públicos de mídia do Bunkr." />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <span class="eyebrow">Visualizador pessoal</span>
+        <h1>Bunkr Viewer</h1>
+        <p>Cole um link público de arquivo ou álbum para organizar e reproduzir os vídeos em uma interface limpa.</p>
+      </div>
+    </header>
+
+    <section class="search-card" aria-label="Abrir link">
+      <form id="open-form">
+        <label for="url">Link do Bunkr</label>
+        <div class="input-row">
+          <input id="url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                 placeholder="https://bunkr.cr/f/... ou https://bunkr.cr/a/..." required />
+          <button id="open-button" type="submit">Abrir</button>
+        </div>
+      </form>
+      <p class="hint">O visualizador só usa conteúdo publicamente acessível. Não faz login, não quebra tokens e não tenta contornar restrições do host.</p>
+    </section>
+
+    <section id="status" class="status" hidden></section>
+
+    <section id="viewer" class="viewer" hidden>
+      <div class="player-panel">
+        <video id="player" controls playsinline preload="metadata"></video>
+        <div id="image-viewer" class="image-viewer" hidden></div>
+        <div class="player-meta">
+          <div>
+            <span id="position" class="position"></span>
+            <h2 id="current-title">Mídia</h2>
+          </div>
+          <div class="player-actions">
+            <button id="prev" type="button" class="secondary">Anterior</button>
+            <button id="next" type="button" class="secondary">Próximo</button>
+          </div>
+        </div>
+      </div>
+
+      <aside class="playlist-panel">
+        <div class="playlist-heading">
+          <div>
+            <span class="eyebrow">Conteúdo encontrado</span>
+            <h2 id="album-title">Lista</h2>
+          </div>
+          <span id="count" class="count">0</span>
+        </div>
+        <div id="playlist" class="playlist"></div>
+      </aside>
+    </section>
+
+    <section class="history-card">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">Neste navegador</span>
+          <h2>Recentes</h2>
+        </div>
+        <button id="clear-history" type="button" class="text-button">Limpar</button>
+      </div>
+      <div id="history" class="history"></div>
+    </section>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
