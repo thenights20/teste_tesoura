@@ -18,6 +18,9 @@ const clearHistoryButton = document.querySelector('#clear-history');
 let items = [];
 let currentIndex = 0;
 
+const mediaRe = /\.(mp4|webm|mov|m4v|mkv|jpg|jpeg|png|gif|webp)(?:$|[?#])/i;
+const imageRe = /\.(jpg|jpeg|png|gif|webp)(?:$|[?#])/i;
+
 function setStatus(message = '', type = '') {
   statusBox.hidden = !message;
   statusBox.textContent = message;
@@ -30,6 +33,51 @@ function humanType(item) {
   return 'Mídia';
 }
 
+function normalizeUrl(value, base) {
+  try { return new URL(value, base).href; } catch { return null; }
+}
+
+function isMediaUrl(url) {
+  return mediaRe.test(url || '');
+}
+
+function mediaType(url) {
+  return imageRe.test(url || '') ? 'image' : 'video';
+}
+
+function addUnique(list, seen, url, title = '') {
+  if (!url || !isMediaUrl(url) || seen.has(url)) return;
+  seen.add(url);
+  list.push({ url, title: title || url.split('/').pop() || 'Mídia', type: mediaType(url) });
+}
+
+function extractFromHtml(html, pageUrl) {
+  const found = [];
+  const seen = new Set();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+
+  const title = doc.querySelector('meta[property="og:title"]')?.content ||
+                doc.querySelector('title')?.textContent?.trim() || 'Conteúdo';
+
+  const candidates = [
+    ...doc.querySelectorAll('video[src], source[src], a[href], meta[property="og:video"], meta[property="og:video:url"], meta[name="twitter:player:stream"]')
+  ];
+
+  for (const node of candidates) {
+    const raw = node.getAttribute('src') || node.getAttribute('href') || node.getAttribute('content');
+    const absolute = normalizeUrl(raw, pageUrl);
+    addUnique(found, seen, absolute, node.getAttribute('title') || node.textContent?.trim() || '');
+  }
+
+  const absoluteMedia = html.match(/https?:\\?\/\\?\/[^"'<>\s]+?\.(?:mp4|webm|mov|m4v|mkv|jpg|jpeg|png|gif|webp)(?:\?[^\u0022'<>\s]*)?/gi) || [];
+  for (const raw of absoluteMedia) {
+    const cleaned = raw.replace(/\\\//g, '/').replace(/&amp;/g, '&');
+    addUnique(found, seen, cleaned);
+  }
+
+  return { title, items: found };
+}
+
 function renderPlaylist() {
   playlist.innerHTML = '';
   items.forEach((item, index) => {
@@ -39,15 +87,7 @@ function renderPlaylist() {
 
     const thumb = document.createElement('span');
     thumb.className = 'thumb';
-    if (item.thumbnail) {
-      const img = document.createElement('img');
-      img.src = item.thumbnail;
-      img.alt = '';
-      img.loading = 'lazy';
-      thumb.appendChild(img);
-    } else {
-      thumb.textContent = item.type === 'video' ? '▶' : 'IMG';
-    }
+    thumb.textContent = item.type === 'video' ? '▶' : 'IMG';
 
     const text = document.createElement('span');
     const name = document.createElement('span');
@@ -97,14 +137,14 @@ function selectItem(index, autoplay = false) {
 }
 
 function getHistory() {
-  try { return JSON.parse(localStorage.getItem('bunkr-viewer-history') || '[]'); }
+  try { return JSON.parse(localStorage.getItem('teste-tesoura-history') || '[]'); }
   catch { return []; }
 }
 
 function saveHistory(url, title) {
   const history = getHistory().filter(item => item.url !== url);
   history.unshift({ url, title: title || url, at: Date.now() });
-  localStorage.setItem('bunkr-viewer-history', JSON.stringify(history.slice(0, 12)));
+  localStorage.setItem('teste-tesoura-history', JSON.stringify(history.slice(0, 12)));
   renderHistory();
 }
 
@@ -135,16 +175,27 @@ async function loadUrl(rawUrl) {
   const target = rawUrl.trim();
   if (!target) return;
 
-  setStatus('Lendo a página pública e procurando mídias…');
+  setStatus('Tentando abrir o conteúdo…');
   openButton.disabled = true;
   viewer.hidden = true;
 
   try {
-    const response = await fetch(`/api/extract?url=${encodeURIComponent(target)}`);
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `Falha HTTP ${response.status}`);
+    let data;
+
+    if (isMediaUrl(target)) {
+      data = {
+        title: target.split('/').pop() || 'Conteúdo',
+        items: [{ url: target, title: target.split('/').pop() || 'Mídia', type: mediaType(target) }]
+      };
+    } else {
+      const response = await fetch(target, { mode: 'cors', credentials: 'omit', redirect: 'follow' });
+      if (!response.ok) throw new Error(`Falha HTTP ${response.status}`);
+      const html = await response.text();
+      data = extractFromHtml(html, target);
+    }
+
     if (!Array.isArray(data.items) || !data.items.length) {
-      throw new Error('Nenhuma mídia pública utilizável foi encontrada nessa página.');
+      throw new Error('Nenhuma mídia utilizável foi encontrada nesse link.');
     }
 
     items = data.items;
@@ -162,7 +213,10 @@ async function loadUrl(rawUrl) {
   } catch (error) {
     items = [];
     playlist.innerHTML = '';
-    setStatus(error.message || 'Não foi possível abrir esse link.', 'error');
+    const corsHint = error instanceof TypeError
+      ? 'O navegador bloqueou a leitura direta dessa página. Se você tiver a URL direta do arquivo de mídia, cole-a aqui.'
+      : (error.message || 'Não foi possível abrir esse link.');
+    setStatus(corsHint, 'error');
   } finally {
     openButton.disabled = false;
   }
@@ -178,7 +232,7 @@ player.addEventListener('ended', () => {
   if (currentIndex < items.length - 1) selectItem(currentIndex + 1, true);
 });
 clearHistoryButton.addEventListener('click', () => {
-  localStorage.removeItem('bunkr-viewer-history');
+  localStorage.removeItem('teste-tesoura-history');
   renderHistory();
 });
 
