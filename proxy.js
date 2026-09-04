@@ -7,6 +7,10 @@
       return `${location.origin}/api/page`;
     }
 
+    if (location.hostname.endsWith('.vercel.app')) {
+      return `${location.origin}/api/proxy`;
+    }
+
     const fromQuery = new URL(location.href).searchParams.get('backend');
     if (fromQuery) {
       try {
@@ -63,7 +67,7 @@
     const external = target.origin !== location.origin;
     if (!external) return nativeFetch(input, init);
 
-    if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
+    if (location.hostname === '127.0.0.1' || location.hostname === 'localhost' || location.hostname.endsWith('.vercel.app')) {
       return fetchThroughBackend(target.href);
     }
 
