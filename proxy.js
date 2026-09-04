@@ -19,6 +19,15 @@
     return localStorage.getItem(STORAGE_KEY) || '';
   }
 
+  function backendUrl(targetUrl, mode = 'page') {
+    const backend = getConfiguredBackend();
+    if (!backend) return '';
+    const endpoint = new URL(backend);
+    endpoint.searchParams.set('url', targetUrl);
+    if (mode !== 'page') endpoint.searchParams.set('mode', mode);
+    return endpoint.href;
+  }
+
   function wrapResponse(response, sourceUrl) {
     return new Proxy(response, {
       get(target, prop) {
@@ -30,9 +39,8 @@
   }
 
   async function fetchThroughBackend(targetUrl) {
-    const backend = getConfiguredBackend();
-    if (!backend) throw new TypeError('Backend não configurado');
-    const endpoint = `${backend}?url=${encodeURIComponent(targetUrl)}`;
+    const endpoint = backendUrl(targetUrl, 'page');
+    if (!endpoint) throw new TypeError('Backend não configurado');
     const response = await nativeFetch(endpoint, {
       method: 'GET',
       mode: 'cors',
@@ -69,6 +77,8 @@
 
   window.TesteTesouraBackend = {
     get: getConfiguredBackend,
+    pageUrl(targetUrl) { return backendUrl(targetUrl, 'page'); },
+    mediaUrl(targetUrl) { return backendUrl(targetUrl, 'media'); },
     set(value) {
       const parsed = new URL(value);
       if (parsed.protocol !== 'https:') throw new Error('O backend precisa usar HTTPS.');
