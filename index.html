@@ -6,20 +6,20 @@
   <meta name="color-scheme" content="dark" />
   <title>Teste Tesoura</title>
   <meta name="description" content="Interface experimental para visualização de mídia." />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=0.1.3" />
 </head>
 <body>
   <main class="shell">
     <header class="hero">
       <div>
-        <span class="eyebrow">Teste • v0.1.2 • 05/09/2026</span>
+        <span class="eyebrow">Teste • v0.1.3 • 05/09/2026</span>
         <h1>Teste Tesoura</h1>
         <p>Cole um link para abrir conteúdo de mídia disponível pelo navegador.</p>
       </div>
     </header>
 
     <section class="search-card" aria-label="Abrir link">
-      <form id="open-form">
+      <form id="open-form" onsubmit="return false;">
         <label for="url">Link</label>
         <div class="input-row">
           <input id="url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://..." required />
@@ -72,6 +72,6 @@
     </section>
   </main>
 
-  <script src="./app.js" defer></script>
+  <script src="./app.js?v=0.1.3" defer></script>
 </body>
 </html>
