@@ -6,73 +6,17 @@
   <meta name="color-scheme" content="dark" />
   <title>Teste Tesoura</title>
   <meta name="description" content="Interface experimental para visualização de mídia." />
-  <link rel="stylesheet" href="./styles.css?v=0.1.4" />
+  <link rel="stylesheet" href="./styles.css?v=0.1.5" />
 </head>
 <body>
   <main class="shell">
-    <header class="hero">
-      <div>
-        <span class="eyebrow">Teste • v0.1.4 • 05/09/2026</span>
-        <h1>Teste Tesoura</h1>
-        <p>Cole um link para abrir conteúdo de mídia disponível pelo navegador.</p>
-      </div>
-    </header>
-
-    <section class="search-card" aria-label="Abrir link">
-      <form id="open-form" onsubmit="return false;">
-        <label for="url">Link</label>
-        <div class="input-row">
-          <input id="url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://..." required />
-          <button id="open-button" type="submit">Abrir</button>
-        </div>
-      </form>
-      <p class="hint">Aceita links diretos e tenta identificar fontes ou players públicos reproduzíveis nas páginas informadas.</p>
-    </section>
-
+    <header class="hero"><div><span class="eyebrow">Teste • v0.1.5 • 05/09/2026</span><h1>Teste Tesoura</h1><p>Cole um link para abrir conteúdo de mídia disponível pelo navegador.</p></div></header>
+    <section class="search-card" aria-label="Abrir link"><form id="open-form" onsubmit="return false;"><label for="url">Link</label><div class="input-row"><input id="url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://..." required /><button id="open-button" type="submit">Abrir</button></div></form><p class="hint">Aceita links e tenta abrir os vídeos encontrados.</p></section>
     <section id="status" class="status" hidden></section>
-
-    <section id="viewer" class="viewer" hidden>
-      <div class="player-panel">
-        <video id="player" controls playsinline preload="metadata"></video>
-        <div id="image-viewer" class="image-viewer" hidden></div>
-        <div class="player-meta">
-          <div>
-            <span id="position" class="position"></span>
-            <h2 id="current-title">Mídia</h2>
-          </div>
-          <div class="player-actions">
-            <button id="prev" type="button" class="secondary">Anterior</button>
-            <button id="direct-url" type="button" class="secondary">Usar URL direta</button>
-            <button id="next" type="button" class="secondary">Próximo</button>
-          </div>
-        </div>
-      </div>
-
-      <aside class="playlist-panel">
-        <div class="playlist-heading">
-          <div>
-            <span class="eyebrow">Conteúdo encontrado</span>
-            <h2 id="album-title">Lista</h2>
-          </div>
-          <span id="count" class="count">0</span>
-        </div>
-        <div id="playlist" class="playlist"></div>
-      </aside>
-    </section>
-
-    <section class="history-card">
-      <div class="section-title">
-        <div>
-          <span class="eyebrow">Neste navegador</span>
-          <h2>Recentes</h2>
-        </div>
-        <button id="clear-history" type="button" class="text-button">Limpar</button>
-      </div>
-      <div id="history" class="history"></div>
-    </section>
+    <section id="viewer" class="viewer" hidden><div class="player-panel"><video id="player" controls playsinline preload="metadata"></video><div id="image-viewer" class="image-viewer" hidden></div><div class="player-meta"><div><span id="position" class="position"></span><h2 id="current-title">Mídia</h2></div><div class="player-actions"><button id="prev" type="button" class="secondary">Anterior</button><button id="direct-url" type="button" class="secondary">Usar URL direta</button><button id="next" type="button" class="secondary">Próximo</button></div></div></div><aside class="playlist-panel"><div class="playlist-heading"><div><span class="eyebrow">Conteúdo encontrado</span><h2 id="album-title">Lista</h2></div><span id="count" class="count">0</span></div><div id="playlist" class="playlist"></div></aside></section>
+    <section class="history-card"><div class="section-title"><div><span class="eyebrow">Neste navegador</span><h2>Recentes</h2></div><button id="clear-history" type="button" class="text-button">Limpar</button></div><div id="history" class="history"></div></section>
   </main>
-
-  <script src="./proxy.js?v=0.1.4"></script>
-  <script src="./app.js?v=0.1.4" defer></script>
+  <script src="./proxy.js?v=0.1.5"></script>
+  <script src="./app.js?v=0.1.5" defer></script>
 </body>
 </html>
