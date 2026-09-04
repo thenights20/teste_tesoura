@@ -18,11 +18,12 @@ const clearHistoryButton = document.querySelector('#clear-history');
 
 let items = [];
 let currentIndex = 0;
+let lastSubmittedUrl = '';
 
 const directVideoRe = /\.(mp4|webm|mov|m4v|mkv)(?:$|[?#])/i;
 const videoNameRe = /\.(mp4|webm|mov|m4v|mkv)\b/i;
 const itemPathRe = /\/(f|i|v)\/[A-Za-z0-9]+(?:$|[/?#])/i;
-const MAX_ITEM_PAGES = 24;
+const MAX_ITEM_PAGES = 30;
 
 function setStatus(message = '', type = '') {
   statusBox.hidden = !message;
@@ -31,11 +32,15 @@ function setStatus(message = '', type = '') {
 }
 
 function cleanTitle(value = '') {
-  return value.replace(/\s+/g, ' ').trim();
+  return String(value).replace(/\s+/g, ' ').trim();
 }
 
 function normalizeUrl(value, base) {
   try { return new URL(value, base).href; } catch { return null; }
+}
+
+function isHttpsUrl(value) {
+  try { return new URL(value).protocol === 'https:'; } catch { return false; }
 }
 
 function titleFromUrl(url) {
@@ -58,45 +63,54 @@ function isClosedCandidate(url = '', title = '') {
   return /(^|[\/_-])closed([\/_-.?#]|$)/i.test(`${url} ${title}`);
 }
 
-function isHttpsUrl(value) {
-  try { return new URL(value).protocol === 'https:'; } catch { return false; }
+function classifyCandidate(url, hint = '') {
+  const text = `${url} ${hint}`;
+  if (directVideoRe.test(url)) return 'direct';
+  if (/player|embed/i.test(text)) return 'embed';
+  return 'unknown';
 }
 
-function extractVideoCandidates(html, pageUrl) {
+function extractCandidates(html, pageUrl) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const candidates = [];
   const seen = new Set();
 
-  function add(raw, title = '', priority = 9) {
+  function add(raw, title = '', priority = 9, forcedKind = '') {
     const url = normalizeUrl(raw, pageUrl);
-    if (!url || seen.has(url) || isClosedCandidate(url, title)) return;
-    if (!/^https:/i.test(url)) return;
+    if (!url || !/^https:/i.test(url) || seen.has(url) || isClosedCandidate(url, title)) return;
+    const kind = forcedKind || classifyCandidate(url, title);
+    if (kind === 'unknown') return;
     seen.add(url);
-    candidates.push({ url, title: cleanTitle(title) || titleFromUrl(url), playable: true, priority });
+    candidates.push({ url, title: cleanTitle(title) || titleFromUrl(url), kind, priority });
   }
 
   for (const node of doc.querySelectorAll('video[src]')) {
-    add(node.getAttribute('src'), node.getAttribute('title') || pageTitle(doc), 1);
+    add(node.getAttribute('src'), node.getAttribute('title') || pageTitle(doc), 1, 'direct');
   }
-
   for (const node of doc.querySelectorAll('video source[src]')) {
-    add(node.getAttribute('src'), node.getAttribute('title') || pageTitle(doc), 1);
+    add(node.getAttribute('src'), node.getAttribute('title') || pageTitle(doc), 1, 'direct');
   }
 
-  for (const node of doc.querySelectorAll('meta[property="og:video"], meta[property="og:video:url"], meta[property="og:video:secure_url"], meta[name="twitter:player:stream"]')) {
-    add(node.getAttribute('content'), pageTitle(doc), 2);
+  for (const node of doc.querySelectorAll('meta[property="og:video"], meta[property="og:video:url"], meta[property="og:video:secure_url"], meta[name="twitter:player"], meta[name="twitter:player:stream"]')) {
+    const raw = node.getAttribute('content');
+    const forcedKind = /twitter:player$/.test(node.getAttribute('name') || '') ? 'embed' : '';
+    add(raw, pageTitle(doc), 2, forcedKind);
+  }
+
+  for (const node of doc.querySelectorAll('iframe[src]')) {
+    add(node.getAttribute('src'), node.getAttribute('title') || pageTitle(doc), 2, 'embed');
   }
 
   for (const node of doc.querySelectorAll('a[href]')) {
     const url = normalizeUrl(node.getAttribute('href'), pageUrl);
     if (url && directVideoRe.test(url)) {
-      add(url, node.getAttribute('title') || node.textContent || pageTitle(doc), 3);
+      add(url, node.getAttribute('title') || node.textContent || pageTitle(doc), 3, 'direct');
     }
   }
 
   const rawUrls = html.match(/https?:\\?\/\\?\/[^"'<>\s]+?\.(?:mp4|webm|mov|m4v|mkv)(?:\?[^\u0022'<>\s]*)?/gi) || [];
   for (const raw of rawUrls) {
-    add(raw.replace(/\\\//g, '/').replace(/&amp;/g, '&'), pageTitle(doc), 4);
+    add(raw.replace(/\\\//g, '/').replace(/&amp;/g, '&'), pageTitle(doc), 4, 'direct');
   }
 
   candidates.sort((a, b) => a.priority - b.priority);
@@ -110,8 +124,9 @@ function findNearbyAnchor(node) {
   if (inside) return inside;
   const closest = node.closest?.('a[href]');
   if (closest) return closest;
+
   let sibling = node.previousElementSibling;
-  for (let i = 0; sibling && i < 3; i++, sibling = sibling.previousElementSibling) {
+  for (let i = 0; sibling && i < 4; i++, sibling = sibling.previousElementSibling) {
     if (sibling.matches?.('a[href]')) return sibling;
     const anchor = sibling.querySelector?.('a[href]');
     if (anchor) return anchor;
@@ -124,42 +139,46 @@ function findVideoItemPages(doc, pageUrl) {
   const found = [];
   const seen = new Set();
 
-  function addPage(anchor, title = '', forceVideo = false) {
+  function addPage(anchor, title = '', forceVideo = false, node = null) {
     if (!anchor) return;
     const absolute = normalizeUrl(anchor.getAttribute('href'), pageUrl);
     if (!absolute || directVideoRe.test(absolute)) return;
 
     let parsed;
     try { parsed = new URL(absolute); } catch { return; }
-    if (parsed.protocol !== 'https:' || parsed.hostname !== base.hostname) return;
-    if (!itemPathRe.test(parsed.pathname + parsed.search)) return;
+    if (parsed.protocol !== 'https:' || parsed.hostname !== base.hostname || !itemPathRe.test(parsed.pathname + parsed.search)) return;
 
     const nearby = cleanTitle(`${title} ${anchor.textContent || ''} ${anchor.parentElement?.textContent || ''}`);
     if (!(forceVideo || /^\/v\//i.test(parsed.pathname) || videoNameRe.test(nearby))) return;
 
+    const id = node?.getAttribute?.('data-file-id') || node?.getAttribute?.('data-id') || '';
     const match = parsed.pathname.match(/\/(f|i|v)\/([A-Za-z0-9]+)/i);
-    const key = match ? `${match[1].toLowerCase()}/${match[2]}` : parsed.pathname;
+    const key = id ? `id:${id}` : (match ? `${match[1].toLowerCase()}/${match[2]}` : parsed.pathname);
     if (seen.has(key)) return;
     seen.add(key);
-    found.push({ key, url: absolute, title: cleanTitle(title) || nearby || titleFromUrl(absolute) });
+
+    found.push({ key, url: absolute, title: cleanTitle(title) || nearby || `Vídeo ${found.length + 1}` });
   }
 
-  for (const block of doc.querySelectorAll('.grid-videos_box-txt')) {
-    addPage(findNearbyAnchor(block), block.textContent || '', true);
+  const cards = [...doc.querySelectorAll('.grid-videos_box-txt')];
+  for (const block of cards) {
+    const text = cleanTitle(block.textContent || '');
+    if (!videoNameRe.test(text) && !block.closest('[data-file-id],[data-id]')) continue;
+    addPage(findNearbyAnchor(block), text, videoNameRe.test(text), block.closest('[data-file-id],[data-id]'));
+    if (found.length >= MAX_ITEM_PAGES) return found;
+  }
+
+  for (const node of doc.querySelectorAll('[data-file-id], [data-id]')) {
+    const text = cleanTitle(node.textContent || node.parentElement?.textContent || '');
+    if (!videoNameRe.test(text)) continue;
+    addPage(findNearbyAnchor(node), text, true, node);
     if (found.length >= MAX_ITEM_PAGES) return found;
   }
 
   if (!found.length) {
-    for (const node of doc.querySelectorAll('[data-file-id], [data-id]')) {
-      const text = cleanTitle(node.textContent || node.parentElement?.textContent || '');
-      addPage(findNearbyAnchor(node), text, videoNameRe.test(text));
-      if (found.length >= MAX_ITEM_PAGES) return found;
-    }
-  }
-
-  if (!found.length) {
     for (const anchor of doc.querySelectorAll('a[href]')) {
-      addPage(anchor, anchor.parentElement?.textContent || anchor.textContent || '', false);
+      const text = cleanTitle(anchor.parentElement?.textContent || anchor.textContent || '');
+      addPage(anchor, text, videoNameRe.test(text));
       if (found.length >= MAX_ITEM_PAGES) break;
     }
   }
@@ -168,61 +187,62 @@ function findVideoItemPages(doc, pageUrl) {
 }
 
 async function fetchPublicPage(url) {
-  const response = await fetch(url, { mode: 'cors', credentials: 'omit', redirect: 'follow' });
+  const response = await fetch(url, { mode: 'cors', credentials: 'omit', redirect: 'follow', cache: 'no-store' });
   if (!response.ok) throw new Error(`Falha HTTP ${response.status}`);
   return { response, contentType: (response.headers.get('content-type') || '').toLowerCase() };
 }
 
+async function resolvePublicItem(entry) {
+  const item = { key: entry.key, title: entry.title, sourcePage: entry.url, url: '', kind: '', playable: false };
+  try {
+    const { response, contentType } = await fetchPublicPage(entry.url);
+    if (contentType.startsWith('video/')) {
+      item.url = response.url;
+      item.kind = 'direct';
+      item.playable = true;
+      return item;
+    }
+
+    const child = extractCandidates(await response.text(), response.url || entry.url);
+    const direct = child.candidates.find(c => c.kind === 'direct');
+    const embed = child.candidates.find(c => c.kind === 'embed');
+    const candidate = direct || embed;
+    if (candidate) {
+      item.url = candidate.url;
+      item.kind = candidate.kind;
+      item.playable = true;
+    }
+  } catch (error) {
+    item.error = error?.message || 'Falha ao consultar a página do item.';
+  }
+  return item;
+}
+
 async function discoverVideos(html, pageUrl) {
-  const page = extractVideoCandidates(html, pageUrl);
+  const page = extractCandidates(html, pageUrl);
   const itemPages = findVideoItemPages(page.doc, pageUrl);
 
   if (!itemPages.length) {
-    const candidate = page.candidates[0];
+    const candidate = page.candidates.find(c => c.kind === 'direct') || page.candidates.find(c => c.kind === 'embed');
     return {
       title: page.title,
       items: [{
         title: page.title,
         sourcePage: pageUrl,
         url: candidate?.url || '',
+        kind: candidate?.kind || '',
         playable: Boolean(candidate?.url)
-      }],
-      detected: 1
+      }]
     };
   }
 
   const result = [];
   for (let i = 0; i < itemPages.length; i++) {
-    const entry = itemPages[i];
     setStatus(`Verificando vídeos… ${i + 1} de ${itemPages.length}`);
-
-    const item = {
-      key: entry.key,
-      title: entry.title,
-      sourcePage: entry.url,
-      url: '',
-      playable: false
-    };
-
-    try {
-      const { response, contentType } = await fetchPublicPage(entry.url);
-      if (contentType.startsWith('video/')) {
-        item.url = response.url;
-        item.playable = true;
-      } else {
-        const child = extractVideoCandidates(await response.text(), response.url || entry.url);
-        const candidate = child.candidates.find(c => !isClosedCandidate(c.url, c.title));
-        if (candidate) {
-          item.url = candidate.url;
-          item.playable = true;
-        }
-      }
-    } catch {}
-
-    result.push(item);
+    result.push(await resolvePublicItem(itemPages[i]));
   }
 
-  return { title: page.title, items: result, detected: itemPages.length };
+  return { title: page.title, items: result };
 }
 
 function renderPlaylist() {
@@ -243,7 +263,9 @@ function renderPlaylist() {
 
     const type = document.createElement('span');
     type.className = 'media-type';
-    type.textContent = item.playable ? 'Vídeo • fonte direta encontrada' : 'Vídeo • fonte não direta';
+    type.textContent = item.playable
+      ? (item.kind === 'embed' ? 'Vídeo • player público encontrado' : 'Vídeo • fonte direta encontrada')
+      : 'Vídeo • identificado, fonte não exposta';
 
     text.append(name, type);
     button.append(thumb, text);
@@ -257,6 +279,23 @@ function resetPlayer() {
   player.removeAttribute('src');
   player.load();
   imageViewer.innerHTML = '';
+  imageViewer.hidden = true;
+}
+
+function showEmbed(url) {
+  player.hidden = true;
+  imageViewer.hidden = false;
+  imageViewer.innerHTML = '';
+  const frame = document.createElement('iframe');
+  frame.src = url;
+  frame.allow = 'autoplay; fullscreen; picture-in-picture';
+  frame.allowFullscreen = true;
+  frame.referrerPolicy = 'strict-origin-when-cross-origin';
+  frame.style.width = '100%';
+  frame.style.minHeight = '420px';
+  frame.style.border = '0';
+  imageViewer.appendChild(frame);
+  setStatus('Player público carregado.');
 }
 
 function selectItem(index, autoplay = false) {
@@ -268,18 +307,23 @@ function selectItem(index, autoplay = false) {
   position.textContent = `${currentIndex + 1} de ${items.length}`;
   prevButton.disabled = currentIndex === 0;
   nextButton.disabled = currentIndex === items.length - 1;
-
   resetPlayer();
+
   if (!item.playable || !item.url) {
     player.hidden = true;
     imageViewer.hidden = false;
-    imageViewer.textContent = 'Vídeo identificado. Nenhuma fonte pública direta foi encontrada nesta página.';
-    setStatus('O vídeo foi identificado corretamente, mas a página não expôs uma fonte direta reproduzível. Você pode usar uma URL direta autorizada pelo botão abaixo.', 'error');
+    imageViewer.textContent = 'Vídeo identificado. A página consultada não expôs uma fonte direta ou player público utilizável pelo navegador.';
+    setStatus('O vídeo foi identificado, mas a fonte reproduzível não foi exposta diretamente nesta página.', 'error');
     renderPlaylist();
     return;
   }
 
-  imageViewer.hidden = true;
+  if (item.kind === 'embed') {
+    showEmbed(item.url);
+    renderPlaylist();
+    return;
+  }
+
   player.hidden = false;
   setStatus('Carregando vídeo…');
   player.src = item.url;
@@ -297,8 +341,7 @@ function useAuthorizedDirectUrl() {
     setStatus('A URL direta precisa usar HTTPS.', 'error');
     return;
   }
-
-  items[currentIndex] = { ...items[currentIndex], url, playable: true, manual: true };
+  items[currentIndex] = { ...items[currentIndex], url, kind: 'direct', playable: true, manual: true };
   selectItem(currentIndex, true);
 }
 
@@ -339,9 +382,14 @@ function renderHistory() {
 }
 
 async function loadUrl(rawUrl) {
-  const target = rawUrl.trim();
-  if (!target) return;
+  const target = String(rawUrl || '').trim();
+  if (!target) {
+    setStatus('Cole um link válido.', 'error');
+    return;
+  }
 
+  lastSubmittedUrl = target;
+  urlInput.value = target;
   setStatus('Lendo o conteúdo público…');
   openButton.disabled = true;
   viewer.hidden = true;
@@ -352,23 +400,21 @@ async function loadUrl(rawUrl) {
     if (directVideoRe.test(target) && isHttpsUrl(target)) {
       data = {
         title: titleFromUrl(target),
-        items: [{ title: titleFromUrl(target), url: target, playable: true, sourcePage: target }],
-        detected: 1
+        items: [{ title: titleFromUrl(target), url: target, kind: 'direct', playable: true, sourcePage: target }]
       };
     } else {
       const { response, contentType } = await fetchPublicPage(target);
       if (contentType.startsWith('video/')) {
         data = {
           title: titleFromUrl(response.url),
-          items: [{ title: titleFromUrl(response.url), url: response.url, playable: true, sourcePage: target }],
-          detected: 1
+          items: [{ title: titleFromUrl(response.url), url: response.url, kind: 'direct', playable: true, sourcePage: target }]
         };
       } else {
         data = await discoverVideos(await response.text(), response.url || target);
       }
     }
 
-    if (!data.items.length) throw new Error('Nenhum vídeo foi identificado nesse link.');
+    if (!data.items?.length) throw new Error('Nenhum vídeo foi identificado nesse link.');
 
     items = data.items;
     currentIndex = 0;
@@ -377,12 +423,13 @@ async function loadUrl(rawUrl) {
     viewer.hidden = false;
 
     const playableCount = items.filter(item => item.playable).length;
+    const embedCount = items.filter(item => item.kind === 'embed').length;
     if (!playableCount) {
-      setStatus(`Reconheci ${items.length} vídeo(s), mas nenhuma fonte pública direta reproduzível foi exposta.`, 'error');
+      setStatus(`Reconheci ${items.length} vídeo(s), mas nenhum expôs fonte direta ou player público utilizável.`, 'error');
     } else if (playableCount < items.length) {
-      setStatus(`Reconheci ${items.length} vídeo(s); ${playableCount} têm fonte direta encontrada.`, '');
+      setStatus(`Reconheci ${items.length} vídeo(s); ${playableCount} têm uma forma pública de reprodução${embedCount ? ` (${embedCount} via player público)` : ''}.`);
     } else {
-      setStatus('');
+      setStatus(`Reconheci ${items.length} vídeo(s) com forma pública de reprodução.`);
     }
 
     selectItem(0, false);
@@ -394,19 +441,21 @@ async function loadUrl(rawUrl) {
   } catch (error) {
     items = [];
     playlist.innerHTML = '';
-    setStatus(
-      error instanceof TypeError
-        ? 'O navegador bloqueou a leitura da página por CORS. O GitHub Pages não consegue ler essa resposta diretamente.'
-        : (error.message || 'Não foi possível abrir esse link.'),
-      'error'
-    );
+    viewer.hidden = true;
+    urlInput.value = lastSubmittedUrl;
+    const message = error instanceof TypeError
+      ? 'O navegador bloqueou a leitura da página por CORS. O link foi preservado; o GitHub Pages não consegue ler essa resposta diretamente.'
+      : (error?.message || 'Não foi possível abrir esse link.');
+    setStatus(message, 'error');
   } finally {
     openButton.disabled = false;
+    urlInput.value = lastSubmittedUrl;
   }
 }
 
 form.addEventListener('submit', event => {
   event.preventDefault();
+  event.stopPropagation();
   loadUrl(urlInput.value);
 });
 
@@ -418,10 +467,9 @@ player.addEventListener('loadedmetadata', () => setStatus(''));
 player.addEventListener('canplay', () => setStatus(''));
 player.addEventListener('error', () => {
   const item = items[currentIndex];
-  if (!item) return;
-  item.playable = false;
-  setStatus('A fonte encontrada não pôde ser reproduzida pelo navegador. O vídeo continua identificado e você pode informar uma URL direta autorizada.', 'error');
-  renderPlaylist();
+  const code = player.error?.code ? ` Código ${player.error.code}.` : '';
+  setStatus(`A fonte foi encontrada, mas o navegador não conseguiu reproduzi-la.${code}`, 'error');
+  if (item) item.playbackError = true;
 });
 player.addEventListener('ended', () => {
   if (currentIndex < items.length - 1) selectItem(currentIndex + 1, true);
@@ -435,6 +483,7 @@ clearHistoryButton.addEventListener('click', () => {
 renderHistory();
 const initialUrl = new URL(location.href).searchParams.get('url');
 if (initialUrl) {
+  lastSubmittedUrl = initialUrl;
   urlInput.value = initialUrl;
   loadUrl(initialUrl);
 }
