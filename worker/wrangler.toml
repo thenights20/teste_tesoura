@@ -1,0 +1,4 @@
+name = "teste-tesoura-helper"
+main = "index.js"
+compatibility_date = "2026-09-05"
+workers_dev = true
