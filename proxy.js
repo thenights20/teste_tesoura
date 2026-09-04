@@ -3,10 +3,15 @@
   const STORAGE_KEY = 'teste-tesoura-backend';
 
   function getConfiguredBackend() {
+    if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
+      return `${location.origin}/api/page`;
+    }
+
     const fromQuery = new URL(location.href).searchParams.get('backend');
     if (fromQuery) {
       try {
-        const normalized = new URL(fromQuery).origin + new URL(fromQuery).pathname.replace(/\/$/, '');
+        const parsed = new URL(fromQuery);
+        const normalized = parsed.origin + parsed.pathname.replace(/\/$/, '');
         localStorage.setItem(STORAGE_KEY, normalized);
         return normalized;
       } catch {}
@@ -24,7 +29,7 @@
     });
   }
 
-  async function fetchThroughBackend(targetUrl, init) {
+  async function fetchThroughBackend(targetUrl) {
     const backend = getConfiguredBackend();
     if (!backend) throw new TypeError('Backend não configurado');
     const endpoint = `${backend}?url=${encodeURIComponent(targetUrl)}`;
@@ -50,11 +55,15 @@
     const external = target.origin !== location.origin;
     if (!external) return nativeFetch(input, init);
 
+    if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
+      return fetchThroughBackend(target.href);
+    }
+
     try {
       return await nativeFetch(input, init);
     } catch (error) {
       if (!(error instanceof TypeError)) throw error;
-      return fetchThroughBackend(target.href, init);
+      return fetchThroughBackend(target.href);
     }
   };
 
