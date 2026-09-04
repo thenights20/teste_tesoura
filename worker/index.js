@@ -39,22 +39,27 @@ export default {
       method: 'GET',
       redirect: 'follow',
       headers: {
-        'Accept': 'text/html,application/xhtml+xml,video/*;q=0.9,*/*;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1',
         'User-Agent': 'Mozilla/5.0'
       }
     });
 
-    const type = upstream.headers.get('content-type') || '';
-    const headers = cors(new Headers({
-      'Content-Type': type,
-      'X-Source-Url': upstream.url
-    }));
+    const type = (upstream.headers.get('content-type') || '').toLowerCase();
+    const sourceUrl = upstream.url || target.href;
 
-    if (type.toLowerCase().startsWith('video/')) {
-      return new Response(upstream.body, { status: upstream.status, headers });
+    if (!(type.includes('text/html') || type.includes('application/xhtml+xml') || type.startsWith('text/'))) {
+      return new Response('Unsupported upstream type', {
+        status: 415,
+        headers: cors(new Headers({ 'X-Source-Url': sourceUrl }))
+      });
     }
 
     const text = await upstream.text();
+    const headers = cors(new Headers({
+      'Content-Type': type || 'text/html; charset=utf-8',
+      'X-Source-Url': sourceUrl
+    }));
+
     return new Response(text, { status: upstream.status, headers });
   }
 };
