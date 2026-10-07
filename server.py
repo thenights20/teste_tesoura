@@ -14,7 +14,7 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrom
 BUNKR_HOST_RE = re.compile(r"^(?:[a-z0-9-]+\.)?bunkr\.[a-z0-9-]{2,12}$", re.I)
 CDN_HOST_RE = re.compile(r"(^|\.)cdn\.cr$", re.I)
 LEGACY_DOWNLOAD_RE = re.compile(r"^https://dl\.bunkr\.[a-z0-9.-]+/file/\d+(?:[/?#]|$)", re.I)
-ITEM_PATH_RE = re.compile(r"^/(?:f|i|v)/[A-Za-z0-9_-]+(?:[/?#]|$)", re.I)
+ITEM_PATH_RE = re.compile(r"^/(?:f|i|v)/[^/?#]+(?:[/?#]|$)", re.I)
 
 
 def is_bunkr_page(url):
