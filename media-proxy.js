@@ -10,19 +10,29 @@
     statusBox.className = `status ${type}`.trim();
   }
 
-  function isBunkrDownload(url) {
-    return /^https:\/\/dl\.bunkr\.[a-z0-9.-]+\/file\/\d+(?:[/?#]|$)/i.test(String(url || ''));
+  function isBunkrMedia(url) {
+    const raw = String(url || '');
+    if (/^https:\/\/dl\.bunkr\.[a-z0-9.-]+\/file\/\d+(?:[/?#]|$)/i.test(raw)) return true;
+    try {
+      const parsed = new URL(raw);
+      return parsed.protocol === 'https:' &&
+        (parsed.hostname === 'cdn.cr' || parsed.hostname.endsWith('.cdn.cr')) &&
+        parsed.searchParams.has('token') &&
+        parsed.searchParams.has('ex');
+    } catch {
+      return false;
+    }
   }
 
   player.addEventListener('error', () => {
     const original = player.currentSrc || player.src || '';
-    if (!isBunkrDownload(original)) return;
+    if (!isBunkrMedia(original)) return;
     if (player.dataset.proxyAttempted === '1') return;
 
     const backend = window.TesteTesouraBackend?.get?.() || '';
     const mediaUrl = window.TesteTesouraBackend?.mediaUrl?.(original) || '';
     if (!backend || !mediaUrl) {
-      setStatus('O link de arquivo foi encontrado. Para reproduzir online no iPad/PC, é necessário ativar o backend HTTPS do player.', 'error');
+      setStatus('A mídia foi encontrada, mas este navegador não conseguiu abrir o CDN diretamente. Ative o backend HTTPS do player para usar o proxy de reprodução.', 'error');
       return;
     }
 
