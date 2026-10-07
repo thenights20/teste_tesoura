@@ -83,6 +83,7 @@
     get: getConfiguredBackend,
     pageUrl(targetUrl) { return backendUrl(targetUrl, 'page'); },
     mediaUrl(targetUrl) { return backendUrl(targetUrl, 'media'); },
+    resolveUrl(targetUrl) { return backendUrl(targetUrl, 'resolve'); },
     set(value) {
       const parsed = new URL(value);
       if (parsed.protocol !== 'https:') throw new Error('O backend precisa usar HTTPS.');
