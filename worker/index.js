@@ -1,7 +1,7 @@
 const BUNKR_HOST_RE = /^(?:[a-z0-9-]+\.)?bunkr\.[a-z0-9-]{2,12}$/i;
 const CDN_HOST_RE = /(^|\.)cdn\.cr$/i;
 const LEGACY_DOWNLOAD_RE = /^https:\/\/dl\.bunkr\.[a-z0-9.-]+\/file\/\d+(?:[/?#]|$)/i;
-const ITEM_PATH_RE = /^\/(?:f|i|v)\/[A-Za-z0-9_-]+(?:[/?#]|$)/i;
+const ITEM_PATH_RE = /^\/(?:f|i|v)\/[^/?#]+(?:[/?#]|$)/i;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152 Safari/537.36';
 
 function cors(headers = new Headers()) {
