@@ -19,9 +19,9 @@ const clearHistoryButton=document.querySelector('#clear-history');
 let items=[];let currentIndex=0;let lastSubmittedUrl='';
 const videoExt=/\.(mp4|webm|mov|m4v|mkv)(?:$|[?#])/i;
 const videoName=/\.(mp4|webm|mov|m4v|mkv)\b/i;
-const itemPath=/\/(f|i|v)\/[A-Za-z0-9]+(?:$|[/?#])/i;
+const itemPath=/\/(f|i|v)\/[^/?#]+(?:$|[/?#])/i;
 const bunkrDownload=/^https:\/\/dl\.bunkr\.[a-z0-9.-]+\/file\/(\d+)(?:[/?#]|$)/i;
-const bunkrItem=/^https:\/\/(?:[a-z0-9-]+\.)?bunkr\.[a-z0-9-]{2,12}\/(?:f|i|v)\/[A-Za-z0-9_-]+(?:[/?#]|$)/i;
+const bunkrItem=/^https:\/\/(?:[a-z0-9-]+\.)?bunkr\.[a-z0-9-]{2,12}\/(?:f|i|v)\/[^/?#]+(?:[/?#]|$)/i;
 
 function setStatus(m='',t=''){statusBox.hidden=!m;statusBox.textContent=m;statusBox.className=`status ${t}`.trim()}
 function clean(v=''){return String(v).replace(/\s+/g,' ').trim()}
